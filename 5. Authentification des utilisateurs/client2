@@ -1,0 +1,74 @@
+package org.example;
+
+import java.io.*;
+import java.net.*;
+import java.util.Scanner;
+
+public class client11 {
+    private static final String SERVER_ADDRESS = "localhost";
+    private static final int SERVER_PORT = 2024;
+
+    public static void main(String[] args) {
+        try (Socket socket = new Socket(SERVER_ADDRESS, SERVER_PORT);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             Scanner scanner = new Scanner(System.in)) {
+
+            // Authentification de l'utilisateur
+            String serverResponse;
+            while (true) {
+                System.out.println(in.readLine()); // Demande du nom d'utilisateur
+                String username = scanner.nextLine();
+                out.println(username);
+
+                System.out.println(in.readLine()); // Demande du mot de passe
+                String password = scanner.nextLine();
+                out.println(password);
+
+                serverResponse = in.readLine();
+                System.out.println(serverResponse);
+                if (serverResponse.contains("Bienvenue")) {
+                    break; // Authentification réussie
+                }
+            }
+
+            // Affichage des instructions après authentification
+            System.out.println("Commandes disponibles :");
+            System.out.println("/create [nom_salon] - Créer un salon");
+            System.out.println("/join [nom_salon] - Rejoindre un salon");
+            System.out.println("/leave - Quitter le salon actuel");
+            System.out.println("Tapez un message normal pour parler dans votre salon.");
+
+            // Thread pour écouter les messages entrants (y compris les notifications)
+            new Thread(() -> {
+                try {
+                    String serverMessage;
+                    while ((serverMessage = in.readLine()) != null) {
+                        if (serverMessage.contains("a rejoint le salon") || serverMessage.contains("a quitté le salon")) {
+                            System.out.println("🔔 Notification : " + serverMessage);
+                        } else {
+                            System.out.println(serverMessage);
+                        }
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }).start();
+
+            // Boucle principale pour envoyer des messages et gérer les salons
+            while (true) {
+                String input = scanner.nextLine();
+
+                if (input.equalsIgnoreCase("exit")) {
+                    out.println("exit");
+                    break;
+                }
+
+                out.println(input);
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
