@@ -1,0 +1,86 @@
+package org.example;
+
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+public class serveur1 {
+    private static final int PORT = 2009;
+    private static Map<String, PrintWriter> clients = new HashMap<>();
+
+    public static void main(String[] args) {
+        System.out.println("Serveur de chat démarré...");
+
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                new ClientHandler(clientSocket).start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static class ClientHandler extends Thread {
+        private Socket socket;
+        private PrintWriter out;
+        private BufferedReader in;
+        private String clientName;
+
+        public ClientHandler(Socket socket) {
+            this.socket = socket;
+        }
+
+        public void run() {
+            try {
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);
+
+
+                while (true) {
+                    out.println("Entrez votre nom : ");
+                    clientName = in.readLine();
+
+                    if (clientName == null || clientName.trim().isEmpty() || clients.containsKey(clientName)) {
+                        out.println("Nom invalide ou déjà pris. Essayez un autre.");
+                    } else {
+                        clients.put(clientName, out);
+                        broadcast(clientName + " a rejoint le chat !");
+                        break;
+                    }
+                }
+
+
+                String message;
+                while ((message = in.readLine()) != null) {
+                    if (message.equalsIgnoreCase("exit")) {
+                        break;
+                    }
+                    broadcast(clientName + " : " + message);
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+
+                if (clientName != null) {
+                    clients.remove(clientName);
+                    broadcast(clientName + " a quitté le chat.");
+                }
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+
+        private void broadcast(String message) {
+            for (PrintWriter writer : clients.values()) {
+                writer.println(message);
+            }
+        }
+    }
+
+}
