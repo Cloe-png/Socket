@@ -134,7 +134,7 @@ public class serveur5 {
                 salons.get(salon).add(clientName);
                 utilisateurSalon.put(clientName, salon);
                 salonMessages.putIfAbsent(salon, new ArrayList<>());
-                out.println("Salon " + salon + " créé et rejoint.");
+                out.println("Salon " + salon + " créé.");
             } else if (message.startsWith("/join ")) {
                 String salon = message.substring(6);
                 if (salons.containsKey(salon)) {
