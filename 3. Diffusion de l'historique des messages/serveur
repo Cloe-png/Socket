@@ -1,0 +1,111 @@
+package org.example;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+public class serveur3 {
+    private static final int PORT = 2025;
+    private static ConcurrentHashMap<String, PrintWriter> clients = new ConcurrentHashMap<>();
+    private static CopyOnWriteArrayList<String> messageHistory = new CopyOnWriteArrayList<>();
+
+    public static void main(String[] args) {
+        System.out.println("Serveur en attente de connexions...");
+
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                new ClientHandler(clientSocket).start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static class ClientHandler extends Thread {
+        private Socket socket;
+        private PrintWriter out;
+        private BufferedReader in;
+        private String clientName;
+
+        public ClientHandler(Socket socket) {
+            this.socket = socket;
+        }
+
+        public void run() {
+            try {
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);
+
+                // Envoyer les anciens messages au nouvel utilisateur
+                for (String message : messageHistory) {
+                    out.println(message);
+                }
+
+                while (true) {
+                    out.println("Entrez votre nom : ");
+                    clientName = in.readLine();
+
+                    if (clientName == null || clientName.trim().isEmpty() || clients.containsKey(clientName)) {
+                        out.println("Nom invalide ou déjà pris. Essayez un autre.");
+                    } else {
+                        clients.put(clientName, out);
+                        break;
+                    }
+                }
+
+                String message;
+                while ((message = in.readLine()) != null) {
+                    if (message.equalsIgnoreCase("exit")) {
+                        break;
+                    }
+                    handleMessage(message);
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if (clientName != null) {
+                    clients.remove(clientName);
+                }
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        private void handleMessage(String message) {
+            messageHistory.add(clientName + " : " + message);
+
+            if (message.startsWith("@")) {
+                int spaceIndex = message.indexOf(" ");
+                if (spaceIndex != -1) {
+                    String recipient = message.substring(1, spaceIndex);
+                    String content = message.substring(spaceIndex + 1);
+                    sendMessage(clientName + " : " + content, recipient);
+                }
+            } else {
+                sendMessage(clientName + " : " + message, "all");
+            }
+        }
+
+        private void sendMessage(String message, String recipient) {
+            if (recipient.equals("all")) {
+                for (PrintWriter writer : clients.values()) {
+                    writer.println(message);
+                }
+            } else if (clients.containsKey(recipient)) {
+                clients.get(recipient).println(message);
+            } else {
+                out.println("Utilisateur introuvable.");
+            }
+        }
+    }
+}
