@@ -9,6 +9,7 @@ public class serveur4 {
     private static Map<String, PrintWriter> clients = new HashMap<>();
     private static Map<String, Set<String>> salons = new HashMap<>();
     private static Map<String, String> utilisateurSalon = new HashMap<>();
+    private static Map<String, List<String>> salonMessages = new HashMap<>();
 
     public static void main(String[] args) {
         System.out.println("Serveur en attente de connexions...");
@@ -49,12 +50,12 @@ public class serveur4 {
                         synchronized (clients) {
                             clients.put(clientName, out);
                         }
-                        out.println("Tapez /create salon pour créer un salon, /join salon pour rejoindre un salon, /leave pour quitter un salon.");
+                        out.println("Commandes : /create [nom_salon], /join [nom_salon], /leave");
                         break;
                     }
                 }
 
-                // Réception des messages
+                // Boucle de réception des messages
                 String message;
                 while ((message = in.readLine()) != null) {
                     if (message.equalsIgnoreCase("exit")) {
@@ -79,19 +80,20 @@ public class serveur4 {
             }
         }
 
-        // Gère les commandes et messages
         private void handleMessage(String message) {
             if (message.startsWith("/create ")) {
                 String salon = message.substring(8);
                 salons.putIfAbsent(salon, new HashSet<>());
                 salons.get(salon).add(clientName);
                 utilisateurSalon.put(clientName, salon);
+                salonMessages.putIfAbsent(salon, new ArrayList<>());
                 out.println("Salon " + salon + " créé et rejoint.");
             } else if (message.startsWith("/join ")) {
                 String salon = message.substring(6);
                 if (salons.containsKey(salon)) {
                     salons.get(salon).add(clientName);
                     utilisateurSalon.put(clientName, salon);
+                    sendSalonHistory(salon);
                     out.println("Vous avez rejoint le salon " + salon + ".");
                 } else {
                     out.println("Le salon n'existe pas.");
@@ -107,6 +109,7 @@ public class serveur4 {
             } else {
                 if (utilisateurSalon.containsKey(clientName)) {
                     String salon = utilisateurSalon.get(clientName);
+                    saveMessage(salon, clientName + " : " + message);
                     sendMessage(clientName + " : " + message, salon);
                 } else {
                     out.println("Rejoignez un salon pour envoyer des messages.");
@@ -114,7 +117,22 @@ public class serveur4 {
             }
         }
 
-        // Envoie un message à tous les membres d'un salon
+        private void saveMessage(String salon, String message) {
+            synchronized (salonMessages) {
+                salonMessages.get(salon).add(message);
+            }
+        }
+
+        private void sendSalonHistory(String salon) {
+            synchronized (salonMessages) {
+                if (salonMessages.containsKey(salon)) {
+                    for (String msg : salonMessages.get(salon)) {
+                        out.println(msg);
+                    }
+                }
+            }
+        }
+
         private void sendMessage(String message, String salon) {
             synchronized (clients) {
                 if (salons.containsKey(salon)) {
