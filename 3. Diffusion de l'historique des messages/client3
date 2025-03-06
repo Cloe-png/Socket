@@ -1,0 +1,57 @@
+package org.example;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.util.Scanner;
+
+public class client7 {
+    private static final String SERVER_ADDRESS = "localhost";
+    private static final int SERVER_PORT = 2025;
+
+    public static void main(String[] args) {
+        try (Socket socket = new Socket(SERVER_ADDRESS, SERVER_PORT);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             Scanner scanner = new Scanner(System.in)) {
+
+            System.out.println("Connexion au serveur...");
+            System.out.println(in.readLine());
+            String clientName = scanner.nextLine();
+            out.println(clientName);
+
+            new Thread(() -> {
+                try {
+                    String serverMessage;
+                    while ((serverMessage = in.readLine()) != null) {
+                        System.out.println(serverMessage);
+                    }
+                } catch (IOException e) {
+                    System.err.println("Erreur lors de la réception des messages : " + e.getMessage());
+                }
+            }).start();
+
+            String recipient;
+            while (true) {
+                System.out.println("À qui voulez-vous envoyer un message ? (nom / all) : ");
+                recipient = scanner.nextLine();
+
+                if (recipient.equalsIgnoreCase("exit")) {
+                    out.println("exit");
+                    break;
+                }
+
+                System.out.println("Entrez votre message : ");
+                String message = scanner.nextLine();
+
+                out.println("@" + recipient + " " + message);
+                System.out.println("Message envoyé.");
+            }
+
+        } catch (IOException e) {
+            System.err.println("Erreur de connexion au serveur : " + e.getMessage());
+        }
+    }
+}
