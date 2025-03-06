@@ -1,1 +1,130 @@
+package org.example.salon;
 
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+public class serveur4 {
+    private static final int PORT = 2025;
+    private static Map<String, PrintWriter> clients = new HashMap<>();
+    private static Map<String, Set<String>> salons = new HashMap<>();
+    private static Map<String, String> utilisateurSalon = new HashMap<>();
+
+    public static void main(String[] args) {
+        System.out.println("Serveur en attente de connexions...");
+
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                new ClientHandler(clientSocket).start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static class ClientHandler extends Thread {
+        private Socket socket;
+        private PrintWriter out;
+        private BufferedReader in;
+        private String clientName;
+
+        public ClientHandler(Socket socket) {
+            this.socket = socket;
+        }
+
+        public void run() {
+            try {
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);
+
+                // Demande du nom d'utilisateur
+                while (true) {
+                    out.println("Entrez votre nom : ");
+                    clientName = in.readLine();
+
+                    if (clientName == null || clientName.trim().isEmpty() || clients.containsKey(clientName)) {
+                        out.println("Nom invalide ou déjà pris. Essayez un autre.");
+                    } else {
+                        synchronized (clients) {
+                            clients.put(clientName, out);
+                        }
+                        out.println("Tapez /create salon pour créer un salon, /join salon pour rejoindre un salon, /leave pour quitter un salon.");
+                        break;
+                    }
+                }
+
+                // Réception des messages
+                String message;
+                while ((message = in.readLine()) != null) {
+                    if (message.equalsIgnoreCase("exit")) {
+                        break;
+                    }
+                    handleMessage(message);
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if (clientName != null) {
+                    synchronized (clients) {
+                        clients.remove(clientName);
+                    }
+                }
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        // Gère les commandes et messages
+        private void handleMessage(String message) {
+            if (message.startsWith("/create ")) {
+                String salon = message.substring(8);
+                salons.putIfAbsent(salon, new HashSet<>());
+                salons.get(salon).add(clientName);
+                utilisateurSalon.put(clientName, salon);
+                out.println("Salon " + salon + " créé et rejoint.");
+            } else if (message.startsWith("/join ")) {
+                String salon = message.substring(6);
+                if (salons.containsKey(salon)) {
+                    salons.get(salon).add(clientName);
+                    utilisateurSalon.put(clientName, salon);
+                    out.println("Vous avez rejoint le salon " + salon + ".");
+                } else {
+                    out.println("Le salon n'existe pas.");
+                }
+            } else if (message.equals("/leave")) {
+                if (utilisateurSalon.containsKey(clientName)) {
+                    String salon = utilisateurSalon.remove(clientName);
+                    salons.get(salon).remove(clientName);
+                    out.println("Vous avez quitté le salon " + salon + ".");
+                } else {
+                    out.println("Vous n'êtes dans aucun salon.");
+                }
+            } else {
+                if (utilisateurSalon.containsKey(clientName)) {
+                    String salon = utilisateurSalon.get(clientName);
+                    sendMessage(clientName + " : " + message, salon);
+                } else {
+                    out.println("Rejoignez un salon pour envoyer des messages.");
+                }
+            }
+        }
+
+        // Envoie un message à tous les membres d'un salon
+        private void sendMessage(String message, String salon) {
+            synchronized (clients) {
+                if (salons.containsKey(salon)) {
+                    for (String user : salons.get(salon)) {
+                        if (clients.containsKey(user)) {
+                            clients.get(user).println(message);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
