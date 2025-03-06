@@ -1,1 +1,195 @@
+package org.example;
 
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+public class serveur5 {
+    private static final int PORT = 2024;
+    private static Map<String, PrintWriter> clients = new HashMap<>();
+    private static Map<String, Set<String>> salons = new HashMap<>();
+    private static Map<String, String> utilisateurSalon = new HashMap<>();
+    private static Map<String, List<String>> salonMessages = new HashMap<>();
+    private static final String USERS_FILE = "users.txt";
+    private static Map<String, String> utilisateurs = new HashMap<>();
+
+    public static void main(String[] args) {
+        System.out.println("Serveur en attente de connexions...");
+        chargerUtilisateurs();
+
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                new ClientHandler(clientSocket).start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void chargerUtilisateurs() {
+        try (BufferedReader reader = new BufferedReader(new FileReader(USERS_FILE))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ", 2);
+                if (parts.length == 2) {
+                    utilisateurs.put(parts[0], parts[1]);
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Fichier d'utilisateurs introuvable, création d'un nouveau fichier.");
+        }
+    }
+
+    private static void enregistrerUtilisateur(String username, String password) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(USERS_FILE, true))) {
+            writer.write(username + " " + password);
+            writer.newLine();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static class ClientHandler extends Thread {
+        private Socket socket;
+        private PrintWriter out;
+        private BufferedReader in;
+        private String clientName;
+
+        public ClientHandler(Socket socket) {
+            this.socket = socket;
+        }
+
+        public void run() {
+            try {
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);
+
+                // Authentification utilisateur
+                while (true) {
+                    out.println("Entrez votre nom d'utilisateur : ");
+                    String username = in.readLine();
+                    out.println("Entrez votre mot de passe : ");
+                    String password = in.readLine();
+
+                    if (username == null || password == null || username.trim().isEmpty() || password.trim().isEmpty()) {
+                        out.println("Nom d'utilisateur ou mot de passe invalide.");
+                        continue;
+                    }
+
+                    synchronized (utilisateurs) {
+                        if (utilisateurs.containsKey(username)) {
+                            if (utilisateurs.get(username).equals(password)) {
+                                clientName = username;
+                                out.println("Authentification réussie. Bienvenue, " + clientName + "!");
+                                break;
+                            } else {
+                                out.println("Mot de passe incorrect.");
+                            }
+                        } else {
+                            utilisateurs.put(username, password);
+                            enregistrerUtilisateur(username, password);
+                            clientName = username;
+                            out.println("Compte créé avec succès. Bienvenue, " + clientName + "!");
+                            break;
+                        }
+                    }
+                }
+
+                synchronized (clients) {
+                    clients.put(clientName, out);
+                }
+
+                out.println("Commandes : /create [nom_salon], /join [nom_salon], /leave");
+
+                // Boucle de réception des messages
+                String message;
+                while ((message = in.readLine()) != null) {
+                    if (message.equalsIgnoreCase("exit")) {
+                        break;
+                    }
+                    handleMessage(message);
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if (clientName != null) {
+                    synchronized (clients) {
+                        clients.remove(clientName);
+                    }
+                }
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        private void handleMessage(String message) {
+            if (message.startsWith("/create ")) {
+                String salon = message.substring(8);
+                salons.putIfAbsent(salon, new HashSet<>());
+                salons.get(salon).add(clientName);
+                utilisateurSalon.put(clientName, salon);
+                salonMessages.putIfAbsent(salon, new ArrayList<>());
+                out.println("Salon " + salon + " créé et rejoint.");
+            } else if (message.startsWith("/join ")) {
+                String salon = message.substring(6);
+                if (salons.containsKey(salon)) {
+                    salons.get(salon).add(clientName);
+                    utilisateurSalon.put(clientName, salon);
+                    sendSalonHistory(salon);
+                    out.println("Vous avez rejoint le salon " + salon + ".");
+                } else {
+                    out.println("Le salon n'existe pas.");
+                }
+            } else if (message.equals("/leave")) {
+                if (utilisateurSalon.containsKey(clientName)) {
+                    String salon = utilisateurSalon.remove(clientName);
+                    salons.get(salon).remove(clientName);
+                    out.println("Vous avez quitté le salon " + salon + ".");
+                } else {
+                    out.println("Vous n'êtes dans aucun salon.");
+                }
+            } else {
+                if (utilisateurSalon.containsKey(clientName)) {
+                    String salon = utilisateurSalon.get(clientName);
+                    saveMessage(salon, clientName + " : " + message);
+                    sendMessage(clientName + " : " + message, salon);
+                } else {
+                    out.println("Rejoignez un salon pour envoyer des messages.");
+                }
+            }
+        }
+
+        private void saveMessage(String salon, String message) {
+            synchronized (salonMessages) {
+                salonMessages.get(salon).add(message);
+            }
+        }
+
+        private void sendSalonHistory(String salon) {
+            synchronized (salonMessages) {
+                if (salonMessages.containsKey(salon)) {
+                    for (String msg : salonMessages.get(salon)) {
+                        out.println(msg);
+                    }
+                }
+            }
+        }
+
+        private void sendMessage(String message, String salon) {
+            synchronized (clients) {
+                if (salons.containsKey(salon)) {
+                    for (String user : salons.get(salon)) {
+                        if (clients.containsKey(user)) {
+                            clients.get(user).println(message);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
